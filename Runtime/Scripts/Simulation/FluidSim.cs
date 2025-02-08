@@ -29,6 +29,7 @@ namespace Seb.Fluid.Simulation
 		public float nearPressureMultiplier = 2.15f;
 		public float viscosityStrength = 0;
 		[Range(0, 1)] public float collisionDamping = 0.95f;
+		public float maxVelocity = 100;
 
 		[Header("External Forces")]
         public float gravity = -10;
@@ -69,6 +70,7 @@ namespace Seb.Fluid.Simulation
 		public GraphicsBuffer debugBuffer { get; private set; }
 
 		public GraphicsBuffer colliderBuffer { get; private set; }
+		public GraphicsBuffer effectorBuffer { get; private set; }
 
 		GraphicsBuffer sortTarget_positionBuffer;
 		GraphicsBuffer sortTarget_velocityBuffer;
@@ -93,8 +95,12 @@ namespace Seb.Fluid.Simulation
 		List<FluidCollider> colliders = new List<FluidCollider>();
 		FluidColliderInternal[] collidersArray;
 
-		// State
-		bool isPaused;
+        // Effector
+        List<FluidEffector> effectors = new List<FluidEffector>();
+        FluidEffectorInternal[] effectorsArray;
+
+        // State
+        bool isPaused;
 		bool pauseNextFrame;
 		float smoothRadiusOld;
 		float simTimer;
@@ -104,7 +110,7 @@ namespace Seb.Fluid.Simulation
 
 		void Start()
 		{
-			Debug.Log("Controls: Space = Play/Pause, Q = SlowMode, R = Reset");
+			Debug.Log("Controls: Space = Play/Pause, R = Reset");
 			isPaused = false;
 
 			Initialize();
@@ -303,6 +309,7 @@ namespace Seb.Fluid.Simulation
 			float subStepDeltaTime = frameDeltaTime / iterationsPerFrame;
 			UpdateSettings(subStepDeltaTime, frameDeltaTime);
 
+			UpdateEffectors();
 			UpdateColliders();
 
 			// Simulation sub-steps
@@ -389,6 +396,7 @@ namespace Seb.Fluid.Simulation
 			compute.SetFloat("pressureMultiplier", pressureMultiplier);
 			compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
 			compute.SetFloat("viscosityStrength", viscosityStrength);
+			compute.SetFloat("maxVelocity", maxVelocity);
 			compute.SetVector("boundsSize", simBoundsSize);
 			compute.SetVector("centre", simBoundsCentre);
 
@@ -475,11 +483,7 @@ namespace Seb.Fluid.Simulation
 			public float scale;
 		}
 
-        public struct FluidColliderInternal
-        {
-            public float3 position;
-            public float size; //Negative size used to invert collider (collide inside the sphere)
-        }
+
 
         void OnDrawGizmos()
 		{
@@ -492,6 +496,11 @@ namespace Seb.Fluid.Simulation
 		}
 
         #region Colliders
+        public struct FluidColliderInternal
+        {
+            public float3 position;
+            public float size; //Negative size used to invert collider (collide inside the sphere)
+        }
 
         public void RegisterCollider(FluidCollider fluidCollider)
 		{
@@ -544,6 +553,72 @@ namespace Seb.Fluid.Simulation
 				collidersArray = new FluidColliderInternal[activeCollidersCount];
 			}
 		}
+
+        #endregion
+
+        #region Effectors
+
+        public struct FluidEffectorInternal
+        {
+			public float type;
+            public float3 position;
+			public float radius;
+			public float strength;
+        }
+
+        public void RegisterEffector(FluidEffector fluidEffector)
+        {
+            if (!effectors.Contains(fluidEffector))
+                effectors.Add(fluidEffector);
+        }
+
+        public void UnregisterEffector(FluidEffector fluidEffector)
+        {
+            if (effectors.Contains(fluidEffector))
+                effectors.Remove(fluidEffector);
+        }
+
+        void UpdateEffectors()
+        {
+            //Update Effector buffer and array sizes
+            UpdateEffectorsBuffer();
+
+            //Update Effector data
+            for (int i = 0; i < effectors.Count; i++)
+            {
+				effectorsArray[i].type = (int)effectors[i].effectorType;
+                effectorsArray[i].position = effectors[i].transform.position;
+                effectorsArray[i].radius = effectors[i].radius;
+                effectorsArray[i].strength = effectors[i].strength;
+            }
+
+            effectorBuffer.SetData(effectorsArray);
+
+            //Bind to kernel
+            compute.SetInt("EffectorsCount", effectors.Count);
+            compute.SetBuffer(externalForcesKernel, "Effectors", effectorBuffer);
+        }
+
+        void UpdateEffectorsBuffer()
+        {
+            int activeEffectorsCount = effectors.Count;
+
+            if (effectorBuffer != null && activeEffectorsCount > 0 && activeEffectorsCount != effectorBuffer.count)
+            {
+                effectorBuffer.Release();
+                effectorBuffer = null;
+            }
+
+            if (effectorBuffer == null)
+            {
+                effectorBuffer = CreateStructuredBuffer<FluidEffectorInternal>(Mathf.Max(1, effectors.Count));
+            }
+
+            if (effectorsArray == null || activeEffectorsCount != effectorsArray.Length)
+            {
+                effectorsArray = new FluidEffectorInternal[activeEffectorsCount];
+            }
+        }
 
         #endregion
     }

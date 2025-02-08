@@ -44,11 +44,24 @@ const float nearPressureMultiplier;
 const float viscosityStrength;
 const float edgeForce;
 const float edgeForceDst;
+const float maxVelocity;
 
 // Noise
 const float NoiseStrength;
 const float NoiseScale;
 const float3 NoiseSpeed;
+
+// Effectors
+struct FluidEffector
+{
+    float type;
+    float3 position;
+    float radius;
+    float strength;
+};
+
+int EffectorsCount;
+StructuredBuffer<FluidEffector> Effectors;
 
 // Colliders
 struct FluidCollider
@@ -144,7 +157,7 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
         }
     }
     
-    /* BOUNDING BOX COLLISION */
+    /* BOUNDING BOX COLLISION /
     // Transform position/velocity to the local space of the bounding box (scale not included)
     float3 posLocal = mul(worldToLocal, float4(pos, 1)).xyz;
     float3 velocityLocal = mul(worldToLocal, float4(vel, 0)).xyz;
@@ -173,6 +186,7 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     // Transform resolved position/velocity back to world space
     pos = mul(localToWorld, float4(posLocal, 1)).xyz;
     vel = mul(localToWorld, float4(velocityLocal, 0)).xyz;
+    */
     
 }
 
@@ -193,7 +207,44 @@ void ExternalForces(uint3 id : SV_DispatchThreadID)
     
         Velocities[id.x] += noise.xyz * deltaTime;
     }
-
+    
+    // Effectors
+    for (int i = 0; i < EffectorsCount; i++)
+    {
+        if (Effectors[i].type == 0)
+        {
+            //Gravitational : Attraction increasing up to radius, then decreasing with distance.
+            float3 dir = Effectors[i].position - Positions[id.x];
+            float3 normDir = normalize(dir);
+            float distance = length(dir);
+            float radius = Effectors[i].radius;
+            
+            float strength = smoothstep(0, radius, distance) * Effectors[i].strength / (distance * distance);
+        
+            Velocities[id.x] += strength * normDir * deltaTime;
+        }
+        else if (Effectors[i].type == 1)
+        {
+            //Far Attractor : Attraction increasing with distance, from radius to infinity.
+            float3 dir = Effectors[i].position - Positions[id.x];
+            float3 normDir = normalize(dir);
+            float distance = length(dir);
+            float radius = Effectors[i].radius;
+            
+            float distToRadius = distance - radius;
+            
+            float strength = step(radius, distance) * Effectors[i].strength * distToRadius * distToRadius;
+        
+            Velocities[id.x] += strength * normDir * deltaTime;
+        }
+    }
+    
+    // Clamp velocity
+    float velocity = length(Velocities[id.x]);
+    
+    if(velocity > maxVelocity)
+        Velocities[id.x] = Velocities[id.x] * maxVelocity / velocity;
+    
     // Predict
     PredictedPositions[id.x] = Positions[id.x] + Velocities[id.x] * 1 / 120.0;
 }
