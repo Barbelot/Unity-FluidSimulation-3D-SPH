@@ -157,7 +157,7 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
         }
     }
     
-    /* BOUNDING BOX COLLISION /
+    /* BOUNDING BOX COLLISION */
     // Transform position/velocity to the local space of the bounding box (scale not included)
     float3 posLocal = mul(worldToLocal, float4(pos, 1)).xyz;
     float3 velocityLocal = mul(worldToLocal, float4(vel, 0)).xyz;
@@ -186,7 +186,6 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     // Transform resolved position/velocity back to world space
     pos = mul(localToWorld, float4(posLocal, 1)).xyz;
     vel = mul(localToWorld, float4(velocityLocal, 0)).xyz;
-    */
     
 }
 

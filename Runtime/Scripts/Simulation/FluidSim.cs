@@ -34,17 +34,17 @@ namespace Seb.Fluid.Simulation
 		[Header("External Forces")]
         public float gravity = -10;
 		public float noiseStrength = 0;
-		public float noiseScale = 1;
+		public float noiseScale = .2f;
 		public Vector3 noiseSpeed = Vector3.up;
 
         [Header("Foam Settings")] public bool foamActive;
 		public int maxFoamParticleCount = 1000;
 		public float trappedAirSpawnRate = 70;
-		public float spawnRateFadeInTime = 0.5f;
-		public float spawnRateFadeStartTime = 0;
+		public float spawnRateFadeInTime = 0.75f;
+		public float spawnRateFadeStartTime = 0.1f;
 		public Vector2 trappedAirVelocityMinMax = new(5, 25);
 		public Vector2 foamKineticEnergyMinMax = new(15, 80);
-		public float bubbleBuoyancy = 1.5f;
+		public float bubbleBuoyancy = 1.4f;
 		public int sprayClassifyMaxNeighbours = 5;
 		public int bubbleClassifyMinNeighbours = 15;
 		public float bubbleScale = 0.5f;
@@ -309,18 +309,18 @@ namespace Seb.Fluid.Simulation
 			float subStepDeltaTime = frameDeltaTime / iterationsPerFrame;
 			UpdateSettings(subStepDeltaTime, frameDeltaTime);
 
-			UpdateEffectors();
-			UpdateColliders();
+            UpdateEffectors();
+            UpdateColliders();
 
-			// Simulation sub-steps
-			for (int i = 0; i < iterationsPerFrame; i++)
+            // Simulation sub-steps
+            for (int i = 0; i < iterationsPerFrame; i++)
 			{
 				simTimer += subStepDeltaTime;
 				RunSimulationStep();
 			}
 
-			// Foam and spray particles
-			if (foamActive)
+            // Foam and spray particles
+            if (foamActive)
 			{
 				Dispatch(compute, maxFoamParticleCount, kernelIndex: foamUpdateKernel);
 				Dispatch(compute, maxFoamParticleCount, kernelIndex: foamReorderCopyBackKernel);
@@ -531,6 +531,7 @@ namespace Seb.Fluid.Simulation
 			//Bind to kernel
 			compute.SetInt("CollidersCount", colliders.Count);
 			compute.SetBuffer(updatePositionsKernel, "Colliders", colliderBuffer);
+			compute.SetBuffer(foamUpdateKernel, "Colliders", colliderBuffer);
         }
 
 		void UpdateCollidersBuffer()
@@ -595,7 +596,8 @@ namespace Seb.Fluid.Simulation
             effectorBuffer.SetData(effectorsArray);
 
             //Bind to kernel
-            compute.SetInt("EffectorsCount", effectors.Count);
+            //TODO : Investigate why if enable at first frame it glitch the simulation.
+            compute.SetInt("EffectorsCount", simTimer > 0 ? effectors.Count : 0); 
             compute.SetBuffer(externalForcesKernel, "Effectors", effectorBuffer);
         }
 
