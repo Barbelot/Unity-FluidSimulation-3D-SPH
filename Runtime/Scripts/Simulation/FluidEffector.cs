@@ -68,22 +68,25 @@ namespace Seb.Fluid.Simulation
 
         void FindSimulation()
         {
-            if (fluidSim)
-                return;
-
-            foreach(var sim in FindObjectsByType<FluidSim>(FindObjectsSortMode.None))
+            if (!fluidSim)
             {
-                if(sim.id == simulationID)
+                foreach (var sim in FindObjectsByType<FluidSim>(FindObjectsSortMode.None))
                 {
-                    fluidSim = sim;
-
-                    fluidSim.RegisterEffector(this);
-
-                    return;
+                    if (sim.id == simulationID)
+                    {
+                        fluidSim = sim;
+                        break;
+                    }
                 }
             }
 
-            Debug.LogError("Fluid Effector "+name+" could not find a fluid simulation with ID "+simulationID);
+            if (fluidSim)
+            {
+                fluidSim.RegisterEffector(this);
+            } else
+            {
+                Debug.LogError("Fluid Effector " + name + " could not find a fluid simulation with ID " + simulationID);
+            }
         }
     }
 }

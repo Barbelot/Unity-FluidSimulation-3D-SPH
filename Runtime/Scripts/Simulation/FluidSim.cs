@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using Seb.Helpers;
 using static Seb.Helpers.ComputeHelper;
 using UnityEngine.VFX;
-using static UnityEngine.Rendering.VolumeComponent;
 
 namespace Seb.Fluid.Simulation
 {
@@ -36,6 +35,7 @@ namespace Seb.Fluid.Simulation
 		public float noiseStrength = 0;
 		public float noiseScale = .2f;
 		public Vector3 noiseSpeed = Vector3.up;
+		[Range(1, 8)] public int noiseOctaves = 1;
 
         [Header("Foam Settings")] public bool foamActive;
 		public int maxFoamParticleCount = 1000;
@@ -52,6 +52,9 @@ namespace Seb.Fluid.Simulation
 
 		[Header("Volumetric Render Settings")] public bool renderToTex3D;
 		public int densityTextureRes;
+
+		[Header("Particles Ordering")]
+		public bool preserveParticlesOrder = false;
 
 		[Header("References")] public ComputeShader compute;
 		public FluidSpawner spawner;
@@ -76,6 +79,8 @@ namespace Seb.Fluid.Simulation
 		GraphicsBuffer sortTarget_velocityBuffer;
 		GraphicsBuffer sortTarget_predictedPositionsBuffer;
 
+		GraphicsBuffer previousIndicesBuffer;
+
 		// Kernel IDs
 		const int externalForcesKernel = 0;
 		const int spatialHashKernel = 1;
@@ -88,8 +93,9 @@ namespace Seb.Fluid.Simulation
 		const int renderKernel = 8;
 		const int foamUpdateKernel = 9;
 		const int foamReorderCopyBackKernel = 10;
+        const int reverseReorderKernel = 11;
 
-		SpatialHash spatialHash;
+        SpatialHash spatialHash;
 
 		// Colliders
 		List<FluidCollider> colliders = new List<FluidCollider>();
@@ -137,6 +143,8 @@ namespace Seb.Fluid.Simulation
 			sortTarget_predictedPositionsBuffer = CreateStructuredBuffer<float3>(numParticles);
 			sortTarget_velocityBuffer = CreateStructuredBuffer<float3>(numParticles);
 
+			previousIndicesBuffer = CreateStructuredBuffer<uint>(numParticles);
+
 			bufferNameLookup = new Dictionary<GraphicsBuffer, string>
 			{
 				{ positionBuffer, "Positions" },
@@ -149,6 +157,7 @@ namespace Seb.Fluid.Simulation
 				{ sortTarget_positionBuffer, "SortTarget_Positions" },
 				{ sortTarget_predictedPositionsBuffer, "SortTarget_PredictedPositions" },
 				{ sortTarget_velocityBuffer, "SortTarget_Velocities" },
+				{ previousIndicesBuffer, "PreviousIndices" },
 				{ foamCountBuffer, "WhiteParticleCounters" },
 				{ foamBuffer, "WhiteParticles" },
 				{ foamSortTargetBuffer, "WhiteParticlesCompacted" },
@@ -184,11 +193,24 @@ namespace Seb.Fluid.Simulation
 				sortTarget_predictedPositionsBuffer,
 				velocityBuffer,
 				sortTarget_velocityBuffer,
-				spatialHash.SpatialIndices
+				spatialHash.SpatialIndices,
+				previousIndicesBuffer,
 			});
 
-			// Reorder copyback kernel
-			SetBuffers(compute, reorderCopybackKernel, bufferNameLookup, new GraphicsBuffer[]
+			// Reverse Reorder kernel
+            SetBuffers(compute, reverseReorderKernel, bufferNameLookup, new GraphicsBuffer[]
+{
+                positionBuffer,
+                sortTarget_positionBuffer,
+                predictedPositionsBuffer,
+                sortTarget_predictedPositionsBuffer,
+                velocityBuffer,
+                sortTarget_velocityBuffer,
+                previousIndicesBuffer,
+			});
+
+            // Reorder copyback kernel
+            SetBuffers(compute, reorderCopybackKernel, bufferNameLookup, new GraphicsBuffer[]
 			{
 				positionBuffer,
 				sortTarget_positionBuffer,
@@ -360,7 +382,13 @@ namespace Seb.Fluid.Simulation
 			Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
 			if (viscosityStrength != 0) Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
 			Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
-		}
+
+			if (preserveParticlesOrder)
+			{
+				Dispatch(compute, positionBuffer.count, kernelIndex: reverseReorderKernel);
+				Dispatch(compute, positionBuffer.count, kernelIndex: reorderCopybackKernel);
+			}
+        }
 
 		void UpdateSmoothingConstants()
 		{
@@ -404,6 +432,7 @@ namespace Seb.Fluid.Simulation
 			compute.SetFloat("NoiseStrength", noiseStrength);
 			compute.SetFloat("NoiseScale", noiseScale);
 			compute.SetVector("NoiseSpeed", noiseSpeed);
+			compute.SetInt("NoiseOctaves", noiseOctaves);
 
             compute.SetMatrix("localToWorld", transform.localToWorldMatrix);
 			compute.SetMatrix("worldToLocal", transform.worldToLocalMatrix);

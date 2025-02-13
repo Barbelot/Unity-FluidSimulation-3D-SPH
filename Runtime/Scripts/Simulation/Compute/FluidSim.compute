@@ -9,6 +9,7 @@
 #pragma kernel UpdateDensityTexture
 #pragma kernel UpdateWhiteParticles
 #pragma kernel WhiteParticlePrepareNextFrame;
+#pragma kernel ReverseReorder
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -28,6 +29,7 @@ RWStructuredBuffer<float2> Densities; // Density, Near Density
 RWStructuredBuffer<uint> SpatialKeys;
 RWStructuredBuffer<uint> SpatialOffsets;
 StructuredBuffer<uint> SortedIndices;
+RWStructuredBuffer<uint> PreviousIndices;
 
 RWStructuredBuffer<float3> Debug;
 
@@ -50,6 +52,7 @@ const float maxVelocity;
 const float NoiseStrength;
 const float NoiseScale;
 const float3 NoiseSpeed;
+const int NoiseOctaves;
 
 // Effectors
 struct FluidEffector
@@ -202,7 +205,7 @@ void ExternalForces(uint3 id : SV_DispatchThreadID)
     if (NoiseStrength != 0)
     {
         float3 offset = NoiseSpeed * simTime;
-        float4 noise = SimplexNoiseGradient_Octaves(Positions[id.x], NoiseScale, offset, 1, 2, .5f) * NoiseStrength;
+        float4 noise = SimplexNoiseGradient_Octaves(Positions[id.x], NoiseScale, offset, NoiseOctaves, 2, .5f) * NoiseStrength;
     
         Velocities[id.x] += noise.xyz * deltaTime;
     }
@@ -276,6 +279,18 @@ void Reorder(uint3 id : SV_DispatchThreadID)
     SortTarget_Positions[id.x] = Positions[sortedIndex];
     SortTarget_PredictedPositions[id.x] = PredictedPositions[sortedIndex];
     SortTarget_Velocities[id.x] = Velocities[sortedIndex];
+    PreviousIndices[sortedIndex] = id.x;
+}
+
+[numthreads(ThreadGroupSize, 1, 1)]
+void ReverseReorder(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numParticles)
+        return;
+    uint previousIndex = PreviousIndices[id.x];
+    SortTarget_Positions[id.x] = Positions[previousIndex];
+    SortTarget_PredictedPositions[id.x] = PredictedPositions[previousIndex];
+    SortTarget_Velocities[id.x] = Velocities[previousIndex];
 }
 
 [numthreads(ThreadGroupSize, 1, 1)]
