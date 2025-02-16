@@ -527,7 +527,7 @@ namespace Seb.Fluid.Simulation
         #region Colliders
         public struct FluidColliderInternal
         {
-            public float3 position;
+            public Vector3 position;
             public float size; //Negative size used to invert collider (collide inside the sphere)
         }
 
@@ -591,9 +591,9 @@ namespace Seb.Fluid.Simulation
         public struct FluidEffectorInternal
         {
 			public float type;
-            public float3 position;
-			public float radius;
-			public float strength;
+            public Vector3 position;
+			public Vector4 data1;
+			public Vector4 data2;
         }
 
         public void RegisterEffector(FluidEffector fluidEffector)
@@ -618,8 +618,32 @@ namespace Seb.Fluid.Simulation
             {
 				effectorsArray[i].type = (int)effectors[i].effectorType;
                 effectorsArray[i].position = effectors[i].transform.position;
-                effectorsArray[i].radius = effectors[i].radius;
-                effectorsArray[i].strength = effectors[i].strength;
+
+				switch (effectors[i].effectorType)
+				{
+					case FluidEffector.EffectorType.Gravitational:
+                        effectorsArray[i].data1.x = effectors[i].radius;
+                        effectorsArray[i].data1.y = effectors[i].attractionStrength;
+                        break;
+
+                    case FluidEffector.EffectorType.FarAttractor:
+                        effectorsArray[i].data1.x = effectors[i].radius;
+                        effectorsArray[i].data1.y = effectors[i].attractionStrength;
+                        break;
+
+                    case FluidEffector.EffectorType.Vortex:
+						effectorsArray[i].data1.x = effectors[i].radius;
+						effectorsArray[i].data1.y = effectors[i].attractionStrength;
+						effectorsArray[i].data1.z = effectors[i].vortexStrength;
+						effectorsArray[i].data1.w = effectors[i].channelStrength;
+						effectorsArray[i].data2.x = effectors[i].transform.forward.x;
+						effectorsArray[i].data2.y = effectors[i].transform.forward.y;
+						effectorsArray[i].data2.z = effectors[i].transform.forward.z;
+                        break;
+
+					default:
+						break;
+				}
             }
 
             effectorBuffer.SetData(effectorsArray);

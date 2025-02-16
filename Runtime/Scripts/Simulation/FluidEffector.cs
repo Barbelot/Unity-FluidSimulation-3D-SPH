@@ -1,3 +1,4 @@
+using NaughtyAttributes;
 using UnityEngine;
 
 namespace Seb.Fluid.Simulation
@@ -7,7 +8,8 @@ namespace Seb.Fluid.Simulation
     {
         public enum EffectorType { 
             Gravitational, 
-            FarAttractor 
+            FarAttractor,
+            Vortex
         }
 
         [Header("Simulation")]
@@ -17,13 +19,25 @@ namespace Seb.Fluid.Simulation
         [Tooltip("Gravitational : Attraction increasing up to radius, then decreasing with distance.\n" +
             "FarAttractor : Attraction increasing with distance, from radius to infinity.")]
         public EffectorType effectorType;
-        public float strength = 1;
+        [Space]
         public float radius = 1;
+        public float attractionStrength = 1;
+        [Space]
+        [ShowIf("IsVortex")]
+        public float vortexStrength = 1;
+        [ShowIf("IsVortex")]
+        public float channelStrength = 0;
+
+        [Header("Orientation")]
+        public bool alignWithVelocity = false;
 
         [Header("Debug")]
         public bool showGizmos = false;
 
+        public bool IsVortex => effectorType == EffectorType.Vortex;
+
         FluidSim fluidSim;
+        Vector3 previousPosition;
 
         #region Gizmos
 
@@ -40,9 +54,14 @@ namespace Seb.Fluid.Simulation
 
         void DrawGizmos()
         {
-            Gizmos.color = Color.magenta;
+            Gizmos.color = Color.yellow;
 
             Gizmos.DrawWireSphere(transform.position, radius);
+
+            if(effectorType == EffectorType.Vortex)
+            {
+                Gizmos.DrawLine(transform.position-transform.forward * radius * 2, transform.position+transform.forward * radius * 2);
+            }
         }
 
         #endregion
@@ -56,6 +75,14 @@ namespace Seb.Fluid.Simulation
         {
             if(!fluidSim)
                 FindSimulation();
+
+            if (alignWithVelocity)
+                AlignWithVelocity();
+        }
+
+        private void LateUpdate()
+        {
+            previousPosition = transform.position;
         }
 
         private void OnDisable()
@@ -86,6 +113,14 @@ namespace Seb.Fluid.Simulation
             } else
             {
                 Debug.LogError("Fluid Effector " + name + " could not find a fluid simulation with ID " + simulationID);
+            }
+        }
+
+        void AlignWithVelocity()
+        {
+            if(transform.position != previousPosition)
+            {
+                transform.forward = transform.position - previousPosition;
             }
         }
     }

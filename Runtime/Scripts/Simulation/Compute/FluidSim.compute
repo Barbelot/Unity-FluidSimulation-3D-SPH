@@ -59,8 +59,8 @@ struct FluidEffector
 {
     float type;
     float3 position;
-    float radius;
-    float strength;
+    float4 data1;
+    float4 data2;
 };
 
 int EffectorsCount;
@@ -192,6 +192,76 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     
 }
 
+float3 GetNoiseForce(float3 position)
+{
+    float3 offset = NoiseSpeed * simTime;
+    float4 noise = SimplexNoiseGradient_Octaves(position, NoiseScale, offset, NoiseOctaves, 2, .5f) * NoiseStrength;
+    
+    return noise.xyz * deltaTime;
+}
+
+float3 GetEffectorGravitationalForce(float3 position, FluidEffector effector)
+{
+    //Gravitational : Attraction increasing up to radius, then decreasing with distance.
+    float3 dir = effector.position - position;
+    float3 normDir = normalize(dir);
+    float distance = length(dir);
+    float radius = effector.data1.x;
+            
+    float strength = smoothstep(0, radius, distance) * effector.data1.y / (distance * distance);
+        
+    return strength * normDir * deltaTime;
+}
+
+float3 GetEffectorFarAttractorForce(float3 position, FluidEffector effector)
+{
+    //Far Attractor : Attraction increasing with distance, from radius to infinity.
+    float3 dir = effector.position - position;
+    float3 normDir = normalize(dir);
+    float distance = length(dir);
+    float radius = effector.data1.x;
+            
+    float distToRadius = distance - radius;
+            
+    float strength = step(radius, distance) * effector.data1.y * distToRadius * distToRadius;
+        
+    return strength * normDir * deltaTime;
+}
+
+float3 GetEffectorVortexForce(float3 position, FluidEffector effector)
+{
+    //Vortex : Forces increase up to radius, then decrease with distance
+    
+    float3 vortexCenter = effector.position;
+    float vortexRadius = effector.data1.x;
+    float axisAttractionStrength = effector.data1.y;
+    float vortexStrength = effector.data1.z;
+    float axisDirectionStrength = effector.data1.w;
+    float3 vortexAxis = effector.data2.xyz;
+    
+    // Calculate the direction from the particle to the vortex center
+    float3 directionToCenter = position - vortexCenter;
+    float distanceToCenter = length(directionToCenter);
+
+    // Normalize the direction
+    directionToCenter = normalize(directionToCenter);
+
+    float forceMagnitude = smoothstep(0, vortexRadius, distanceToCenter) / (distanceToCenter * distanceToCenter);
+    
+    // Calculate the vortex force
+    float3 vortexForce = cross(directionToCenter, vortexAxis) * vortexStrength;
+
+    // Calculate the force towards the vortex axis
+    float3 directionToAxis = position - (vortexCenter + dot(position - vortexCenter, vortexAxis) * vortexAxis);
+    float3 axisAttractionForce = -normalize(directionToAxis) * axisAttractionStrength;
+
+    // Calculate the force in the direction of the vortex axis
+    float3 axisDirectionForce = vortexAxis * axisDirectionStrength;
+
+    // Apply the forces to the particle velocity
+    return (vortexForce + axisAttractionForce + axisDirectionForce) * forceMagnitude * deltaTime;
+}
+
 [numthreads(ThreadGroupSize, 1, 1)]
 void ExternalForces(uint3 id : SV_DispatchThreadID)
 {
@@ -204,10 +274,7 @@ void ExternalForces(uint3 id : SV_DispatchThreadID)
     // Noise
     if (NoiseStrength != 0)
     {
-        float3 offset = NoiseSpeed * simTime;
-        float4 noise = SimplexNoiseGradient_Octaves(Positions[id.x], NoiseScale, offset, NoiseOctaves, 2, .5f) * NoiseStrength;
-    
-        Velocities[id.x] += noise.xyz * deltaTime;
+        Velocities[id.x] += GetNoiseForce(Positions[id.x]);
     }
     
     // Effectors
@@ -215,29 +282,15 @@ void ExternalForces(uint3 id : SV_DispatchThreadID)
     {
         if (Effectors[i].type == 0)
         {
-            //Gravitational : Attraction increasing up to radius, then decreasing with distance.
-            float3 dir = Effectors[i].position - Positions[id.x];
-            float3 normDir = normalize(dir);
-            float distance = length(dir);
-            float radius = Effectors[i].radius;
-            
-            float strength = smoothstep(0, radius, distance) * Effectors[i].strength / (distance * distance);
-        
-            Velocities[id.x] += strength * normDir * deltaTime;
+            Velocities[id.x] += GetEffectorGravitationalForce(Positions[id.x], Effectors[i]);
         }
         else if (Effectors[i].type == 1)
         {
-            //Far Attractor : Attraction increasing with distance, from radius to infinity.
-            float3 dir = Effectors[i].position - Positions[id.x];
-            float3 normDir = normalize(dir);
-            float distance = length(dir);
-            float radius = Effectors[i].radius;
-            
-            float distToRadius = distance - radius;
-            
-            float strength = step(radius, distance) * Effectors[i].strength * distToRadius * distToRadius;
-        
-            Velocities[id.x] += strength * normDir * deltaTime;
+            Velocities[id.x] += GetEffectorFarAttractorForce(Positions[id.x], Effectors[i]);
+        }
+        else if (Effectors[i].type == 2)
+        {
+            Velocities[id.x] += GetEffectorVortexForce(Positions[id.x], Effectors[i]);
         }
     }
     
