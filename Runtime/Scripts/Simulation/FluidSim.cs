@@ -329,7 +329,7 @@ namespace Seb.Fluid.Simulation
 		void RunSimulationFrame(float frameDeltaTime)
 		{
 			float subStepDeltaTime = frameDeltaTime / iterationsPerFrame;
-			UpdateSettings(subStepDeltaTime, frameDeltaTime);
+            UpdateSettings(subStepDeltaTime, frameDeltaTime);
 
             UpdateEffectors();
             UpdateColliders();
@@ -624,24 +624,33 @@ namespace Seb.Fluid.Simulation
 					case FluidEffector.EffectorType.Gravitational:
                         effectorsArray[i].data1.x = effectors[i].radius;
                         effectorsArray[i].data1.y = effectors[i].attractionStrength;
+                        effectorsArray[i].data1.z = effectors[i].distancePower;
                         break;
 
                     case FluidEffector.EffectorType.FarAttractor:
                         effectorsArray[i].data1.x = effectors[i].radius;
                         effectorsArray[i].data1.y = effectors[i].attractionStrength;
+                        effectorsArray[i].data1.z = effectors[i].distancePower;
                         break;
 
                     case FluidEffector.EffectorType.Vortex:
 						effectorsArray[i].data1.x = effectors[i].radius;
 						effectorsArray[i].data1.y = effectors[i].attractionStrength;
-						effectorsArray[i].data1.z = effectors[i].vortexStrength;
+                        effectorsArray[i].data1.z = effectors[i].distancePower;
 						effectorsArray[i].data1.w = effectors[i].channelStrength;
 						effectorsArray[i].data2.x = effectors[i].transform.forward.x;
 						effectorsArray[i].data2.y = effectors[i].transform.forward.y;
 						effectorsArray[i].data2.z = effectors[i].transform.forward.z;
+                        effectorsArray[i].data2.w = effectors[i].vortexStrength;
                         break;
 
-					default:
+					case FluidEffector.EffectorType.Ring:
+                        effectorsArray[i].data1.x = effectors[i].radius;
+                        effectorsArray[i].data1.y = effectors[i].attractionStrength;
+                        effectorsArray[i].data1.z = effectors[i].distancePower;
+                        break;
+
+                    default:
 						break;
 				}
             }

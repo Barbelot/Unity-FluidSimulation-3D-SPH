@@ -1,4 +1,5 @@
 using NaughtyAttributes;
+using UnityEditor;
 using UnityEngine;
 
 namespace Seb.Fluid.Simulation
@@ -9,7 +10,8 @@ namespace Seb.Fluid.Simulation
         public enum EffectorType { 
             Gravitational, 
             FarAttractor,
-            Vortex
+            Vortex,
+            Ring
         }
 
         [Header("Simulation")]
@@ -22,6 +24,7 @@ namespace Seb.Fluid.Simulation
         [Space]
         public float radius = 1;
         public float attractionStrength = 1;
+        [Tooltip("Exponent on the effect of distance to the effector.")]public float distancePower = 2;
         [Space]
         [ShowIf("IsVortex")]
         public float vortexStrength = 1;
@@ -41,6 +44,8 @@ namespace Seb.Fluid.Simulation
 
         #region Gizmos
 
+#if UNITY_EDITOR
+
         private void OnDrawGizmos()
         {
             if (showGizmos)
@@ -54,15 +59,28 @@ namespace Seb.Fluid.Simulation
 
         void DrawGizmos()
         {
-            Gizmos.color = Color.yellow;
-
-            Gizmos.DrawWireSphere(transform.position, radius);
-
-            if(effectorType == EffectorType.Vortex)
+            switch (effectorType)
             {
-                Gizmos.DrawLine(transform.position-transform.forward * radius * 2, transform.position+transform.forward * radius * 2);
+                case EffectorType.Vortex:
+                    Gizmos.color = Color.yellow;
+                    Gizmos.DrawWireSphere(transform.position, radius);
+                    Gizmos.DrawLine(transform.position - transform.forward * radius * 2, transform.position + transform.forward * radius * 2);
+                    break;
+
+                case EffectorType.Ring:
+                    Handles.color = Color.yellow;
+                    Handles.DrawWireDisc(transform.position, Vector3.up, radius);
+                    break;
+
+                default:
+                    Gizmos.color = Color.yellow;
+                    Gizmos.DrawWireSphere(transform.position, radius);
+                    break;
+
             }
         }
+
+#endif
 
         #endregion
 
@@ -75,13 +93,13 @@ namespace Seb.Fluid.Simulation
         {
             if(!fluidSim)
                 FindSimulation();
-
-            if (alignWithVelocity)
-                AlignWithVelocity();
         }
 
         private void LateUpdate()
         {
+            if (alignWithVelocity)
+                AlignWithVelocity();
+
             previousPosition = transform.position;
         }
 

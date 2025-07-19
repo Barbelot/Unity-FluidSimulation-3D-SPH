@@ -204,28 +204,43 @@ float3 GetEffectorGravitationalForce(float3 position, FluidEffector effector)
 {
     //Gravitational : Attraction increasing up to radius, then decreasing with distance.
     float3 dir = effector.position - position;
-    float3 normDir = normalize(dir);
     float distance = length(dir);
-    float radius = effector.data1.x;
+    
+    if (distance > 0)
+    {
+        float3 normDir = normalize(dir);
+        float radius = effector.data1.x;
             
-    float strength = smoothstep(0, radius, distance) * effector.data1.y / (distance * distance);
+        float strength = smoothstep(0, radius, distance) * effector.data1.y / pow(distance, effector.data1.z);
         
-    return strength * normDir * deltaTime;
+        return strength * normDir * deltaTime;
+    }
+    else
+    {
+        return float3(0, 0, 0);
+    }
 }
 
 float3 GetEffectorFarAttractorForce(float3 position, FluidEffector effector)
 {
     //Far Attractor : Attraction increasing with distance, from radius to infinity.
     float3 dir = effector.position - position;
-    float3 normDir = normalize(dir);
     float distance = length(dir);
     float radius = effector.data1.x;
+    
+    if (distance > radius)
+    {
+        float3 normDir = normalize(dir);
+        float distToRadius = distance - radius;
             
-    float distToRadius = distance - radius;
-            
-    float strength = step(radius, distance) * effector.data1.y * distToRadius * distToRadius;
+        float strength = effector.data1.y * pow(distToRadius, effector.data1.z);
         
-    return strength * normDir * deltaTime;
+        return strength * normDir * deltaTime;
+    }
+    else
+    {
+        return float3(0, 0, 0);
+    }
 }
 
 float3 GetEffectorVortexForce(float3 position, FluidEffector effector)
@@ -235,7 +250,7 @@ float3 GetEffectorVortexForce(float3 position, FluidEffector effector)
     float3 vortexCenter = effector.position;
     float vortexRadius = effector.data1.x;
     float axisAttractionStrength = effector.data1.y;
-    float vortexStrength = effector.data1.z;
+    float vortexStrength = effector.data2.w;
     float axisDirectionStrength = effector.data1.w;
     float3 vortexAxis = effector.data2.xyz;
     
@@ -243,23 +258,65 @@ float3 GetEffectorVortexForce(float3 position, FluidEffector effector)
     float3 directionToCenter = position - vortexCenter;
     float distanceToCenter = length(directionToCenter);
 
-    // Normalize the direction
-    directionToCenter = normalize(directionToCenter);
+    float forceMagnitude = 0;
+    
+    if (distanceToCenter > 0)
+    {
+        // Normalize the direction
+        directionToCenter = normalize(directionToCenter);
 
-    float forceMagnitude = smoothstep(0, vortexRadius, distanceToCenter) / (distanceToCenter * distanceToCenter);
+        forceMagnitude = smoothstep(0, vortexRadius, distanceToCenter) / pow(distanceToCenter, effector.data1.z);
+    }
     
     // Calculate the vortex force
     float3 vortexForce = cross(directionToCenter, vortexAxis) * vortexStrength;
 
     // Calculate the force towards the vortex axis
     float3 directionToAxis = position - (vortexCenter + dot(position - vortexCenter, vortexAxis) * vortexAxis);
-    float3 axisAttractionForce = -normalize(directionToAxis) * axisAttractionStrength;
+    float axisDistance = length(directionToAxis);
+    
+    float3 axisAttractionForce = float3(0, 0, 0);
+    
+    if (axisDistance > 0)
+    {
+        axisAttractionForce = -(directionToAxis / axisDistance) * axisAttractionStrength;
+    }
 
     // Calculate the force in the direction of the vortex axis
     float3 axisDirectionForce = vortexAxis * axisDirectionStrength;
 
     // Apply the forces to the particle velocity
     return (vortexForce + axisAttractionForce + axisDirectionForce) * forceMagnitude * deltaTime;
+}
+
+float3 GetEffectorRingForce(float3 position, FluidEffector effector)
+{
+    float3 directionFromCenter = position - effector.position;
+    
+    //Horizontal ring
+    directionFromCenter.y = 0;
+    
+    float distanceToCenter = length(directionFromCenter);
+    
+    if (distanceToCenter > 0)
+    {
+        float3 ringPosition = (directionFromCenter / distanceToCenter) * effector.data1.x;
+        float3 ringDirection = ringPosition - position;
+        float ringDistance = length(ringDirection);
+    
+        float3 ringDirectionNormalized = float3(0, 0, 0);
+    
+        if (ringDistance > 0)
+        {
+            ringDirectionNormalized = ringDirection / ringDistance;
+        }
+    
+        return effector.data1.y * ringDirectionNormalized * pow(ringDistance, effector.data1.z);
+    }
+    else
+    {
+        return float3(0, 0, 0);
+    }
 }
 
 [numthreads(ThreadGroupSize, 1, 1)]
@@ -291,6 +348,10 @@ void ExternalForces(uint3 id : SV_DispatchThreadID)
         else if (Effectors[i].type == 2)
         {
             Velocities[id.x] += GetEffectorVortexForce(Positions[id.x], Effectors[i]);
+        }
+        else if (Effectors[i].type == 3)
+        {
+            Velocities[id.x] += GetEffectorRingForce(Positions[id.x], Effectors[i]);
         }
     }
     

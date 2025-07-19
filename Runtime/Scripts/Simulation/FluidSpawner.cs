@@ -2,34 +2,70 @@ using System;
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Rendering;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace Seb.Fluid.Simulation
 {
 
 	public class FluidSpawner : MonoBehaviour
 	{
-		public int particleSpawnDensity = 600;
-		public float3 initialVel;
-		public float jitterStrength;
-		public bool showSpawnBounds;
+		public enum FluidSpawnerType { Cube, Ring, Sphere }
+		public FluidSpawnerType spawnerType = FluidSpawnerType.Cube;
+
+		[Header("Cube Spawner")]
 		public SpawnRegion[] spawnRegions;
 
-		[Header("Debug Info")] public int debug_num_particles;
-		public float debug_spawn_volume;
+		[Header("Ring Spawner")]
+		public float ringRadius = 1;
 
+        [Header("Sphere Spawner")]
+        public float sphereRadius = 1;
+
+        [Header("Common")]
+        public int particleCount = 10000;
+        public float3 initialVel;
+        public float jitterStrength;
+        public bool showSpawnBounds;
 
 		public SpawnData GetSpawnData()
 		{
 			List<float3> allPoints = new();
 			List<float3> allVelocities = new();
 
-			foreach (SpawnRegion region in spawnRegions)
+			switch (spawnerType)
 			{
-				int particlesPerAxis = region.CalculateParticleCountPerAxis(particleSpawnDensity);
-				(float3[] points, float3[] velocities) = SpawnCube(particlesPerAxis, region.centre, Vector3.one * region.size);
-				allPoints.AddRange(points);
-				allVelocities.AddRange(velocities);
-			}
+				case FluidSpawnerType.Cube:
+
+                    foreach (SpawnRegion region in spawnRegions)
+                    {
+                        int particlesPerAxis = region.CalculateParticleCountPerAxis(particleCount);
+                        (float3[] cubePoints, float3[] cubeVelocities) = SpawnCube(particlesPerAxis, region.centre, Vector3.one * region.size);
+                        allPoints.AddRange(cubePoints);
+                        allVelocities.AddRange(cubeVelocities);
+                    }
+
+					break;
+
+				case FluidSpawnerType.Ring:
+
+                    (float3[] ringPoints, float3[] ringVelocities) = SpawnRing();
+                    allPoints.AddRange(ringPoints);
+                    allVelocities.AddRange(ringVelocities);
+
+                    break;
+
+                case FluidSpawnerType.Sphere:
+
+                    (float3[] spherePoints, float3[] sphereVelocities) = SpawnSphere();
+                    allPoints.AddRange(spherePoints);
+                    allVelocities.AddRange(sphereVelocities);
+
+                    break;
+            }
+
 
 			return new SpawnData() { points = allPoints.ToArray(), velocities = allVelocities.ToArray() };
 		}
@@ -66,35 +102,78 @@ namespace Seb.Fluid.Simulation
 			return (points, velocities);
 		}
 
+        (float3[] p, float3[] v) SpawnRing()
+        {
+            int numPoints = particleCount;
+            float3[] points = new float3[numPoints];
+            float3[] velocities = new float3[numPoints];
 
+            int i = 0;
 
-		void OnValidate()
-		{
-			debug_spawn_volume = 0;
-			debug_num_particles = 0;
+            for (int x = 0; x < numPoints; x++)
+            {
+				float angle = Mathf.PI * 2.0f * x / numPoints;
 
-			if (spawnRegions != null)
-			{
-				foreach (SpawnRegion region in spawnRegions)
-				{
-					debug_spawn_volume += region.Volume;
-					int numPerAxis = region.CalculateParticleCountPerAxis(particleSpawnDensity);
-					debug_num_particles += numPerAxis * numPerAxis * numPerAxis;
-				}
-			}
-		}
+				float px = Mathf.Cos(angle) * ringRadius;
+				float py = 0;
+				float pz = Mathf.Sin(angle) * ringRadius;
 
-		void OnDrawGizmos()
+                float3 jitter = UnityEngine.Random.insideUnitSphere * jitterStrength;
+                points[i] = new float3(px, py, pz) + jitter;
+                velocities[i] = initialVel;
+                i++;
+            }
+
+            return (points, velocities);
+        }
+
+        (float3[] p, float3[] v) SpawnSphere()
+        {
+            int numPoints = particleCount;
+            float3[] points = new float3[numPoints];
+            float3[] velocities = new float3[numPoints];
+
+            int i = 0;
+
+            for (int x = 0; x < numPoints; x++)
+            {
+                float3 jitter = UnityEngine.Random.insideUnitSphere * jitterStrength;
+                points[i] = (float3)UnityEngine.Random.onUnitSphere * sphereRadius + jitter;
+                velocities[i] = initialVel;
+                i++;
+            }
+
+            return (points, velocities);
+        }
+
+#if UNITY_EDITOR
+        void OnDrawGizmos()
 		{
 			if (showSpawnBounds && !Application.isPlaying)
 			{
-				foreach (SpawnRegion region in spawnRegions)
+				switch (spawnerType)
 				{
-					Gizmos.color = region.debugDisplayCol;
-					Gizmos.DrawWireCube(region.centre, Vector3.one * region.size);
+					case FluidSpawnerType.Cube:
+
+                        foreach (SpawnRegion region in spawnRegions)
+                        {
+                            Gizmos.color = region.debugDisplayCol;
+                            Gizmos.DrawWireCube(region.centre, Vector3.one * region.size);
+                        }
+
+                        break;
+
+					case FluidSpawnerType.Ring:
+
+						Handles.color = Color.yellow;
+						Handles.DrawWireDisc(transform.position, Vector3.up, ringRadius);
+
+						break;
 				}
 			}
 		}
+#endif
+
 
 		[System.Serializable]
 		public struct SpawnRegion
@@ -105,9 +184,9 @@ namespace Seb.Fluid.Simulation
 
 			public float Volume => size * size * size;
 
-			public int CalculateParticleCountPerAxis(int particleDensity)
+			public int CalculateParticleCountPerAxis(int particleCount)
 			{
-				int targetParticleCount = (int)(Volume * particleDensity);
+				int targetParticleCount = particleCount;
 				int particlesPerAxis = (int)Math.Cbrt(targetParticleCount);
 				return particlesPerAxis;
 			}
